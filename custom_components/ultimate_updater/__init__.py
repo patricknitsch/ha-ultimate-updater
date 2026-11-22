@@ -7,7 +7,6 @@ status and triggers the actions it offers. Nothing is ever updated or rebooted a
 
 from __future__ import annotations
 
-from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_API_TOKEN, CONF_HOST, CONF_PORT, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
@@ -55,21 +54,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: UuConfigEntry) -> bool:
     # register the instance device first, the system devices refer to it by its id
     hub = dr.async_get(hass).async_get_or_create(config_entry_id=entry.entry_id, **hub_fields(coordinator))
     coordinator.hub_device_id = hub.id
+    await async_register_panel(hass)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
-    await async_register_panel(hass)
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: UuConfigEntry) -> bool:
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    others = [
-        e
-        for e in hass.config_entries.async_entries(DOMAIN)
-        if e.entry_id != entry.entry_id and e.state is ConfigEntryState.LOADED
-    ]
-    if unloaded and not others:
-        async_remove_panel(hass)
+    if unloaded:
+        async_remove_panel(hass, entry.entry_id)
     return unloaded
 
 

@@ -53,6 +53,13 @@ TARGET_KEYS = (
 )
 
 
+def _device(devices: dr.DeviceRegistry, identifier: str, entry_id: str) -> dr.DeviceEntry | None:
+    """Device of this config entry (Home Assistant 2026.8+ has a lookup per config entry)."""
+    if hasattr(devices, "async_get_device_by_identifier"):
+        return devices.async_get_device_by_identifier((DOMAIN, identifier), entry_id)
+    return devices.async_get_device(identifiers={(DOMAIN, identifier)})
+
+
 @callback
 def async_register_websocket(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_systems)
@@ -91,7 +98,7 @@ def ws_systems(hass: HomeAssistant, connection: websocket_api.ActiveConnection, 
         data = coordinator.data
         targets = []
         for tid, t in data.targets.items():
-            device = devices.async_get_device(identifiers={(DOMAIN, f"{entry.entry_id}_{tid}")})
+            device = _device(devices, f"{entry.entry_id}_{tid}", entry.entry_id)
             targets.append(
                 {
                     "id": tid,
@@ -109,7 +116,7 @@ def ws_systems(hass: HomeAssistant, connection: websocket_api.ActiveConnection, 
                     "entities": _entities(entities, f"{entry.entry_id}_{tid}", TARGET_KEYS),
                 }
             )
-        hub = devices.async_get_device(identifiers={(DOMAIN, entry.entry_id)})
+        hub = _device(devices, entry.entry_id, entry.entry_id)
         result.append(
             {
                 "entry_id": entry.entry_id,
