@@ -1,14 +1,22 @@
 {
   "domain": "ultimate_updater",
   "name": "Ultimate Updater",
+  "after_dependencies": [
+    "frontend",
+    "panel_custom"
+  ],
   "codeowners": [
     "@patricknitsch"
   ],
   "config_flow": true,
+  "dependencies": [
+    "http",
+    "websocket_api"
+  ],
   "documentation": "https://github.com/patricknitsch/ha-ultimate-updater",
   "integration_type": "hub",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/patricknitsch/ha-ultimate-updater/issues",
   "requirements": [],
-  "version": "0.1.0"
+  "version": "0.2.0"
 }

@@ -33,6 +33,18 @@ Danach unter **Einstellungen → Geräte & Dienste → Integration hinzufügen �
 und das API-Token eingeben. Wird das Token später widerrufen, fragt Home Assistant nach einem neuen; die Adresse lässt
 sich mit *Neu konfigurieren* ändern.
 
+Das Icon der Integration (das Original-Icon von Ultimate Updater von [@BassT23](https://github.com/BassT23)) wird mitgeliefert und ab Home Assistant 2026.3 angezeigt.
+
+## Ultimate-Updater-Seite
+
+Die Integration fügt der Seitenleiste die Seite **Ultimate Updater** hinzu (nur für Administratoren): jede
+Ultimate-Updater-Instanz mit ihren Summen, *Alle prüfen* und den Sammel-Updates, darunter eine Tabelle aller Hosts,
+VMs und Container mit offenen Sicherheits-/weiteren Updates, Neustart-Hinweis, Erreichbarkeit, Zeitpunkt der letzten
+Prüfung, letztem Job und den Buttons *Prüfen*, *Aktualisieren* und *Neustart*. Updates und Neustarts werden direkt
+in der Zeile bestätigt; bei fehlgeschlagenen Jobs öffnet ein Klick das Log, ein Klick auf den Namen die Details.
+Suche und Filter (nur mit Updates, ausgeschaltete Systeme, Hosts) merkt sich der Browser. Solange ein Job läuft,
+sind die Aktionen gesperrt.
+
 ## Geräte und Entitäten
 
 Ein Gerät für die Ultimate-Updater-Instanz und je ein Gerät pro Host / LXC-Container / VM.
