@@ -33,6 +33,17 @@ Then add it under **Settings → Devices & services → Add integration → Ulti
 of the Web UI and the API token. If the token is revoked later, Home Assistant asks for a new one; the address
 can be changed with *Reconfigure*.
 
+The integration icon (the original Ultimate Updater icon by [@BassT23](https://github.com/BassT23)) is shipped with the integration and is shown from Home Assistant 2026.3 on.
+
+## Ultimate Updater page
+
+The integration adds the page **Ultimate Updater** to the sidebar (administrators only): every Ultimate Updater
+instance with its totals, *Check all* and the collective updates, and below it a table of all hosts, VMs and
+containers with pending security/other updates, reboot hint, reachability, time of the last check, latest job
+and the buttons *Check*, *Update* and *Reboot*. Updates and reboots are confirmed right in the row; failed jobs
+show their log with one click, a click on the name opens the details. Search and filters (only with updates,
+switched off systems, hosts) are remembered per browser. While a job runs, the actions are locked.
+
 ## Devices and entities
 
 One device for the Ultimate Updater instance and one device per host / LXC container / VM.
