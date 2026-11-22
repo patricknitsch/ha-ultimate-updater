@@ -184,3 +184,13 @@ async def test_diagnostics_redacts_token(hass: HomeAssistant, fake_uu: FakeUu, e
     assert diag["entry"]["data"]["api_token"] == "**REDACTED**"
     assert len(diag["targets"]) == 4
     assert DOMAIN
+
+
+async def test_system_devices_linked_to_instance(hass: HomeAssistant, fake_uu: FakeUu, entry: MockConfigEntry) -> None:
+    await setup_entry(hass, entry)
+    registry = dr.async_get(hass)
+    hub = registry.async_get_device(identifiers={(DOMAIN, entry.entry_id)})
+    assert hub is not None and entry.runtime_data.hub_device_id == hub.id
+    web = registry.async_get_device(identifiers={(DOMAIN, f"{entry.entry_id}_lxc:101")})
+    assert web.via_device_id == hub.id
+    assert hub.sw_version == "5.2.0"

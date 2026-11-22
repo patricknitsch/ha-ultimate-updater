@@ -18,6 +18,7 @@ from homeassistant.helpers.typing import ConfigType
 from .api import UuClient
 from .const import CONF_VALIDATE_CERT, DEFAULT_PORT, DOMAIN
 from .coordinator import UuConfigEntry, UuCoordinator
+from .entity import hub_fields
 from .panel import async_register_panel, async_remove_panel
 from .websocket import async_register_websocket
 
@@ -51,6 +52,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: UuConfigEntry) -> bool:
     coordinator = UuCoordinator(hass, entry, create_client(hass, dict(entry.data)))
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
+    # register the instance device first, the system devices refer to it by its id
+    hub = dr.async_get(hass).async_get_or_create(config_entry_id=entry.entry_id, **hub_fields(coordinator))
+    coordinator.hub_device_id = hub.id
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
     await async_register_panel(hass)

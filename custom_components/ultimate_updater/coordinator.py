@@ -127,6 +127,8 @@ class UuCoordinator(DataUpdateCoordinator[UuData]):
         self._no_log_permission = False
         self.bulk: BulkRun | None = None
         self.bulk_result: str | None = None
+        # device of the instance itself, parent of the system devices
+        self.hub_device_id: str | None = None
 
     # ── options ──
     @staticmethod

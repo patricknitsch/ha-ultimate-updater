@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import inspect
+from typing import Any
+
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -11,18 +15,25 @@ from .helpers import Target, is_host, label
 
 MODELS = {"host": "Proxmox host", "lxc": "LXC container", "vm": "Virtual machine"}
 
+# Home Assistant 2026.8+ links child devices by device id; `via_device` is deprecated there
+VIA_DEVICE_ID = "via_device_id" in inspect.signature(dr.DeviceRegistry.async_get_or_create).parameters
+
+
+def hub_fields(coordinator: UuCoordinator) -> dict[str, Any]:
+    """Device registry fields of the Ultimate Updater instance itself."""
+    version = coordinator.data.version if coordinator.data else {}
+    return {
+        "identifiers": {(DOMAIN, coordinator.config_entry.entry_id)},
+        "name": "Ultimate Updater",
+        "manufacturer": MANUFACTURER,
+        "model": "Integration API v1",
+        "sw_version": str(version.get("installed")) if version.get("installed") else None,
+        "configuration_url": coordinator.client.base,
+    }
+
 
 def hub_device(coordinator: UuCoordinator) -> DeviceInfo:
-    entry = coordinator.config_entry
-    version = coordinator.data.version if coordinator.data else {}
-    return DeviceInfo(
-        identifiers={(DOMAIN, entry.entry_id)},
-        name="Ultimate Updater",
-        manufacturer=MANUFACTURER,
-        model="Integration API v1",
-        sw_version=str(version.get("installed")) if version.get("installed") else None,
-        configuration_url=coordinator.client.base,
-    )
+    return DeviceInfo(**hub_fields(coordinator))
 
 
 class UuHubEntity(CoordinatorEntity[UuCoordinator]):
@@ -50,6 +61,11 @@ class UuTargetEntity(CoordinatorEntity[UuCoordinator]):
         self._attr_translation_key = key
         self._attr_unique_id = f"{entry_id}_{target_id}_{key}"
         ttype = str(t.get("type") or "")
+        via: dict[str, Any] = (
+            {"via_device_id": coordinator.hub_device_id}
+            if VIA_DEVICE_ID and coordinator.hub_device_id
+            else {"via_device": (DOMAIN, entry_id)}
+        )
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, f"{entry_id}_{target_id}")},
             name=label(t) if is_host(t) else str(t.get("name") or label(t)),
@@ -57,7 +73,7 @@ class UuTargetEntity(CoordinatorEntity[UuCoordinator]):
             model=MODELS.get(ttype, ttype or None),
             model_id=target_id,
             sw_version=str(t["os_display"]) if t.get("os_display") else None,
-            via_device=(DOMAIN, entry_id),
+            **via,
         )
 
     @property
