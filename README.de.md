@@ -41,7 +41,10 @@ Die Integration fügt der Seitenleiste die Seite **Ultimate Updater** hinzu (nur
 Ultimate-Updater-Instanz mit ihren Summen, *Alle prüfen* und den Sammel-Updates, darunter eine Tabelle aller Hosts,
 VMs und Container mit offenen Sicherheits-/weiteren Updates, Neustart-Hinweis, Erreichbarkeit, Zeitpunkt der letzten
 Prüfung, letztem Job und den Buttons *Prüfen*, *Aktualisieren* und *Neustart*. Updates und Neustarts werden direkt
-in der Zeile bestätigt; bei fehlgeschlagenen Jobs öffnet ein Klick das Log, ein Klick auf den Namen die Details.
+in der Zeile bestätigt; bei jedem Job öffnet ein Klick auf *Log* das Log, ein Klick auf den Namen die Details.
+*Jobs und Logs anzeigen* listet die laufenden und letzten Jobs von Ultimate Updater (auch aus der Web-UI) mit System,
+Art, Status und Dauer; das Log eines laufenden Jobs wird alle 5 Sekunden aktualisiert. Logs brauchen die Berechtigung
+`logs` des API-Tokens.
 Suche und Filter (nur mit Updates, ausgeschaltete Systeme, Hosts) merkt sich der Browser. Solange ein Job läuft,
 sind die Aktionen gesperrt.
 

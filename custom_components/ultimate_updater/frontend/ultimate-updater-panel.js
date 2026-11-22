@@ -67,6 +67,18 @@ const TXT = {
 		systems: n => `${n} ${n === 1 ? "System" : "Systeme"}`,
 		summary: (u, s) => (u ? `${u} ${u === 1 ? "Update" : "Updates"} auf ${s} ${s === 1 ? "System" : "Systemen"}` : "Keine Updates"),
 		summaryReboot: n => `${n} ${n === 1 ? "Neustart" : "Neustarts"} nötig`,
+		jobs: "Jobs",
+		showJobs: "Jobs und Logs anzeigen",
+		hideJobs: "Jobs ausblenden",
+		noJobs: "Keine Jobs vorhanden.",
+		started: "Gestartet",
+		duration: "Dauer",
+		type: "Art",
+		state: "Status",
+		reload: "Neu laden",
+		live: "Job läuft – Log wird alle 5 s aktualisiert",
+		noLogPermission: 'Dem API-Token fehlt die Berechtigung "logs".',
+		jobTypes: { update: "Update", check: "Prüfung", reboot: "Neustart", "update-node": "Host-Update", "check-node": "Host-Prüfung", "check-all": "Alle prüfen" },
 	},
 	en: {
 		title: "Ultimate Updater",
@@ -128,6 +140,18 @@ const TXT = {
 		systems: n => `${n} ${n === 1 ? "system" : "systems"}`,
 		summary: (u, s) => (u ? `${u} ${u === 1 ? "update" : "updates"} on ${s} ${s === 1 ? "system" : "systems"}` : "No updates"),
 		summaryReboot: n => `${n} ${n === 1 ? "reboot" : "reboots"} required`,
+		jobs: "Jobs",
+		showJobs: "Show jobs and logs",
+		hideJobs: "Hide jobs",
+		noJobs: "No jobs.",
+		started: "Started",
+		duration: "Duration",
+		type: "Type",
+		state: "State",
+		reload: "Reload",
+		live: "Job running – the log is refreshed every 5 s",
+		noLogPermission: 'The API token lacks the "logs" permission.',
+		jobTypes: { update: "Update", check: "Check", reboot: "Reboot", "update-node": "Host update", "check-node": "Host check", "check-all": "Check all" },
 	},
 };
 
@@ -161,17 +185,26 @@ const numId = id => {
 	return m ? Number(m[1]) : Number.MAX_SAFE_INTEGER;
 };
 
-// log without the ASCII banner, systemd lines and empty lines
+// log without the ASCII banner and repeated empty lines (last 400 lines)
 function cleanLog(log) {
 	const lines = String(log || "").split("\n");
 	const bannerEnd = lines.findIndex(l => /Ultimate Updater \d+\.\d+/.test(l));
 	return lines
-		.slice(bannerEnd >= 0 ? bannerEnd + 1 : 0)
+		.slice(bannerEnd >= 0 && bannerEnd < 40 ? bannerEnd + 1 : 0)
 		.map(l => l.replace(/\s+$/, ""))
-		.filter(l => l.trim() && !/\.service[: ]/.test(l))
-		.slice(-40)
-		.join("\n");
+		.filter((l, i, all) => l || (i > 0 && all[i - 1]))
+		.slice(-400)
+		.join("\n")
+		.trim();
 }
+
+const duration = (from, to) => {
+	const a = Date.parse(from || "");
+	const b = to ? Date.parse(to) : Date.now();
+	if (!a || !b || b < a) return "–";
+	const sec = Math.round((b - a) / 1000);
+	return sec < 3600 ? `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}` : `${Math.floor(sec / 3600)} h ${Math.floor((sec % 3600) / 60)} min`;
+};
 
 const CSS = `
 :host {
@@ -269,6 +302,12 @@ td.inner { padding: 0; }
 pre.log { margin: 0; padding: 12px 16px; max-height: 320px; overflow: auto; font-size: 12px; line-height: 1.45;
 	background: var(--code-editor-background-color, rgba(127,127,127,.08)); white-space: pre-wrap; word-break: break-word; }
 .empty { padding: 24px 16px; color: var(--uu-muted); }
+.loghead { display: flex; align-items: center; gap: 8px; padding: 6px 12px 0 16px; color: var(--uu-muted); font-size: 12px;
+	background: var(--code-editor-background-color, rgba(127,127,127,.08)); }
+.loghead span { flex: 1; }
+.jobs-toggle { padding: 8px 16px; border-top: 1px solid var(--uu-line); }
+table.jobs td, table.jobs th { font-size: 13px; }
+table.jobs td.muted { white-space: nowrap; }
 .hidden-sm { }
 @media (max-width: 760px) {
 	.content { padding: 8px; }
@@ -283,6 +322,9 @@ pre.log { margin: 0; padding: 12px 16px; max-height: 320px; overflow: auto; font
 	tr.row td.c-job { grid-column: 1; }
 	tr.row td.acts { grid-column: 2; grid-row: 2 / span 3; align-self: center; }
 	td.inner { border-bottom: 1px solid var(--uu-line); }
+	tr.jrow { display: flex; flex-wrap: wrap; gap: 2px 12px; padding: 8px 12px; border-bottom: 1px solid var(--uu-line); }
+	tr.jrow td { border: 0; padding: 0; }
+	tr.jrow td:last-child { margin-left: auto; }
 }
 `;
 
@@ -294,14 +336,76 @@ class UltimateUpdaterPanel extends HTMLElement {
 		this._entityCount = -1;
 		this._sig = "";
 		this._confirm = null; // { key, text, run }
-		this._logs = {}; // "entry|target" → { loading, data }
+		this._logs = {}; // "entry|target" or "entry|#unit" → { loading, data, params }
 		this._open = new Set(); // expanded logs
+		this._jobs = {}; // entry_id → { open, loading, list, loadedAt }
+		this._rev = 0; // UI state version (part of the render signature)
 		this._filters = { q: "", onlyUpdates: false, showStopped: true, showHosts: true };
 		try {
 			Object.assign(this._filters, JSON.parse(localStorage.getItem("ultimate-updater-panel") || "{}"));
 		} catch {
 			// private mode – defaults
 		}
+	}
+
+	connectedCallback() {
+		this._timer = setInterval(() => this._tick(), 5000);
+	}
+
+	disconnectedCallback() {
+		clearInterval(this._timer);
+	}
+
+	// refreshes open logs of running jobs and open job lists
+	_tick() {
+		if (!this._hass) return;
+		for (const key of this._open) {
+			const log = this._logs[key];
+			if (log && !log.loading && log.data && BUSY.includes(log.data.state)) {
+				this._loadLog(key, log.params, true);
+			}
+		}
+		for (const [entryId, jobs] of Object.entries(this._jobs)) {
+			const sys = (this._systems || []).find(x => x.entry_id === entryId);
+			const running = sys && this._on(sys.entities.job_running);
+			if (jobs.open && !jobs.loading && (running || Date.now() - (jobs.loadedAt || 0) > 30000)) {
+				this._loadJobs(entryId, true);
+			}
+		}
+		this._render();
+	}
+
+	_update() {
+		this._rev++;
+		this._render();
+	}
+
+	async _loadLog(key, params, quiet = false) {
+		const prev = this._logs[key];
+		this._logs[key] = { loading: !quiet, data: prev && prev.data, params };
+		if (!quiet) this._update();
+		let data;
+		try {
+			data = await this._hass.callWS({ type: "ultimate_updater/job_log", ...params });
+		} catch (e) {
+			data = { error: (e && e.message) || String(e) };
+		}
+		this._logs[key] = { loading: false, data, params };
+		this._update();
+	}
+
+	async _loadJobs(entryId, quiet = false) {
+		const cur = this._jobs[entryId] || {};
+		this._jobs[entryId] = { ...cur, open: true, loading: !quiet };
+		if (!quiet) this._update();
+		let list = cur.list || [];
+		try {
+			list = await this._hass.callWS({ type: "ultimate_updater/jobs", entry_id: entryId });
+		} catch (e) {
+			list = [];
+		}
+		this._jobs[entryId] = { ...this._jobs[entryId], loading: false, list, loadedAt: Date.now() };
+		this._update();
 	}
 
 	set hass(hass) {
@@ -447,7 +551,7 @@ class UltimateUpdaterPanel extends HTMLElement {
 			const s = this._hass.states[id];
 			return s ? `${s.state}|${s.last_updated}` : "-";
 		});
-		return `${parts.join(",")}#${this._confirm ? this._confirm.key : ""}#${[...this._open].join(",")}#${Object.keys(this._logs).map(k => `${k}:${this._logs[k].loading}`).join(",")}#${Math.floor(Date.now() / 60000)}`;
+		return `${parts.join(",")}#${this._rev}#${Math.floor(Date.now() / 60000)}`;
 	}
 
 	_render() {
@@ -545,7 +649,33 @@ class UltimateUpdaterPanel extends HTMLElement {
 		for (const tg of rows) {
 			html += this._renderRow(sys, tg, blocked);
 		}
-		return `${html}</tbody></table></section>`;
+		return `${html}</tbody></table>${this._renderJobs(sys)}</section>`;
+	}
+
+	_renderJobs(sys) {
+		const t = this.t;
+		const jobs = this._jobs[sys.entry_id];
+		const open = jobs && jobs.open;
+		let html = `<div class="jobs-toggle"><button class="btn" data-act="jobs" data-entry="${esc(sys.entry_id)}">${esc(open ? t.hideJobs : t.showJobs)}${open && jobs.list ? ` (${jobs.list.length})` : ""}</button></div>`;
+		if (!open) return html;
+		if (jobs.loading && !jobs.list) return `${html}<div class="empty">${esc(t.loading)}</div>`;
+		if (!jobs.list || !jobs.list.length) return `${html}<div class="empty">${esc(t.noJobs)}</div>`;
+		html += `<table class="jobs"><thead><tr><th>${esc(t.started)}</th><th>${esc(t.system)}</th><th>${esc(t.type)}</th><th>${esc(t.state)}</th><th class="num">${esc(t.duration)}</th><th class="num"></th></tr></thead><tbody>`;
+		for (const j of jobs.list) {
+			const key = `${sys.entry_id}|#${j.unit}`;
+			const busy = BUSY.includes(j.state);
+			const cls = FAILED.includes(j.state) ? "failed" : busy ? "busy" : "";
+			html += `<tr class="jrow">
+				<td class="muted">${esc(this._relTime(j.started_at || j.finished_at))}</td>
+				<td>${esc(j.target_name || j.target || "–")}</td>
+				<td class="muted">${esc(t.jobTypes[j.type] || j.type || "–")}</td>
+				<td><span class="job ${cls}">${busy ? icon(MDI.reboot, "small spin") : ""} ${esc(t.jobStates[j.state] || j.state || "–")}</span></td>
+				<td class="num muted">${esc(duration(j.started_at, busy ? null : j.finished_at))}</td>
+				<td class="num"><a class="link" data-act="log" data-key="${esc(key)}" data-unit="${esc(j.unit)}">${esc(t.log)}</a></td>
+			</tr>`;
+			if (this._open.has(key)) html += `<tr><td class="inner" colspan="6">${this._logBlock(key)}</td></tr>`;
+		}
+		return `${html}</tbody></table>`;
 	}
 
 	_tile(value, label, cls) {
@@ -618,7 +748,7 @@ class UltimateUpdaterPanel extends HTMLElement {
 			<td class="num" data-label="${esc(t.other)}">${other == null ? `<span class="zero">–</span>` : `<b class="${other ? "" : "zero"}">${other}</b>`}</td>
 			<td class="hidden-sm muted">${esc(this._relTime(this._val(e.last_check)))}</td>
 			<td class="c-job"><span class="job ${jobCls}">${busy ? icon(MDI.reboot, "small spin") : ""} ${esc(jobText)}</span>${
-				FAILED.includes(job) ? `<a class="link" data-act="log" data-key="${esc(key)}">${esc(t.log)}</a>` : ""
+				job !== "none" ? `<a class="link" data-act="log" data-key="${esc(key)}">${esc(t.log)}</a>` : ""
 			}</td>
 			<td class="acts">
 				<button class="ib" title="${esc(t.check)}" data-act="press" data-entity="${esc(e.check)}" ${blocked || !this._usable(e.check) ? "disabled" : ""}>${icon(MDI.check)}</button>
@@ -630,16 +760,32 @@ class UltimateUpdaterPanel extends HTMLElement {
 			html += `<tr><td class="inner" colspan="7">${this._confirmBar()}</td></tr>`;
 		}
 		if (this._open.has(key)) {
-			const log = this._logs[key];
-			let text = t.loading;
-			if (log && !log.loading) {
-				const d = log.data;
-				text = d && (d.log || d.error) ? cleanLog(d.log) || d.error : t.noLog;
-				if (d && d.exit_code != null) text = `exit code ${d.exit_code}\n${text}`;
-			}
-			html += `<tr><td class="inner" colspan="7"><pre class="log">${esc(text)}</pre></td></tr>`;
+			html += `<tr><td class="inner" colspan="7">${this._logBlock(key)}</td></tr>`;
 		}
 		return html;
+	}
+
+	_logBlock(key) {
+		const t = this.t;
+		const log = this._logs[key];
+		const d = log && log.data;
+		let text = t.loading;
+		if (log && (!log.loading || d)) {
+			if (d && d.error === "no_permission") text = t.noLogPermission;
+			else if (d && d.log) text = cleanLog(d.log) || t.noLog;
+			else if (d && d.error) text = d.error;
+			else text = t.noLog;
+		}
+		const head = [];
+		if (d && d.unit) {
+			head.push(esc([t.jobTypes[d.type] || d.type, d.target_name, t.jobStates[d.state] || d.state].filter(Boolean).join(" · ")));
+			if (d.exit_code != null) head.push(`exit code ${esc(d.exit_code)}`);
+			head.push(esc(d.unit));
+		}
+		const live = d && BUSY.includes(d.state);
+		return `<div class="loghead"><span>${head.join(" · ")}${live ? ` · ${esc(t.live)}` : ""}</span>
+			<button class="ib" title="${esc(t.reload)}" data-act="reload" data-key="${esc(key)}">${icon(MDI.reboot, `small${log && log.loading ? " spin" : ""}`)}</button></div>
+			<pre class="log">${esc(text)}</pre>`;
 	}
 
 	_confirmBar() {
@@ -683,34 +829,39 @@ class UltimateUpdaterPanel extends HTMLElement {
 			const run =
 				kind === "update" ? () => this._call("update", "install", entity) : () => this._call("button", "press", entity);
 			this._confirm = { key, text, run };
-			this._render();
+			this._update();
 		} else if (act === "yes") {
 			const c = this._confirm;
 			this._confirm = null;
-			this._render();
+			this._update();
 			if (c) await c.run();
 		} else if (act === "no") {
 			this._confirm = null;
-			this._render();
+			this._update();
 		} else if (act === "log") {
 			const key = el.dataset.key;
 			if (this._open.has(key)) {
 				this._open.delete(key);
-				this._render();
+				this._update();
 				return;
 			}
 			this._open.add(key);
-			this._logs[key] = { loading: true };
-			this._render();
-			const [entryId, targetId] = key.split("|");
-			let data = null;
-			try {
-				data = await this._hass.callWS({ type: "ultimate_updater/job_log", entry_id: entryId, target_id: targetId });
-			} catch (e) {
-				data = { error: (e && e.message) || String(e) };
+			const entryId = key.split("|")[0];
+			const params = el.dataset.unit
+				? { entry_id: entryId, unit: el.dataset.unit }
+				: { entry_id: entryId, target_id: key.slice(entryId.length + 1) };
+			await this._loadLog(key, params);
+		} else if (act === "reload") {
+			const log = this._logs[el.dataset.key];
+			if (log && log.params) await this._loadLog(el.dataset.key, log.params);
+		} else if (act === "jobs") {
+			const entryId = el.dataset.entry;
+			if (this._jobs[entryId] && this._jobs[entryId].open) {
+				this._jobs[entryId].open = false;
+				this._update();
+			} else {
+				await this._loadJobs(entryId);
 			}
-			this._logs[key] = { loading: false, data };
-			this._render();
 		}
 	}
 

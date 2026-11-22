@@ -40,8 +40,10 @@ The integration icon (the original Ultimate Updater icon by [@BassT23](https://g
 The integration adds the page **Ultimate Updater** to the sidebar (administrators only): every Ultimate Updater
 instance with its totals, *Check all* and the collective updates, and below it a table of all hosts, VMs and
 containers with pending security/other updates, reboot hint, reachability, time of the last check, latest job
-and the buttons *Check*, *Update* and *Reboot*. Updates and reboots are confirmed right in the row; failed jobs
-show their log with one click, a click on the name opens the details. Search and filters (only with updates,
+and the buttons *Check*, *Update* and *Reboot*. Updates and reboots are confirmed right in the row; every job
+shows its log with one click (*Log*), a click on the name opens the details. *Show jobs and logs* lists the
+running and recent jobs of Ultimate Updater (also those started in the Web UI) with system, type, state and
+duration; the log of a running job is refreshed every 5 seconds. Logs need the `logs` permission of the API token. Search and filters (only with updates,
 switched off systems, hosts) are remembered per browser. While a job runs, the actions are locked.
 
 ## Devices and entities

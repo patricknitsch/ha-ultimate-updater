@@ -16,7 +16,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
 from .api import UuError
-from .const import DOMAIN, FAILURE_STATES
+from .const import BUSY_STATES, DOMAIN
 from .coordinator import UuCoordinator
 from .helpers import is_host, is_stopped, label, security_updates
 
@@ -56,6 +56,7 @@ TARGET_KEYS = (
 @callback
 def async_register_websocket(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_systems)
+    websocket_api.async_register_command(hass, ws_jobs)
     websocket_api.async_register_command(hass, ws_job_log)
 
 
@@ -123,44 +124,82 @@ def ws_systems(hass: HomeAssistant, connection: websocket_api.ActiveConnection, 
     connection.send_result(msg["id"], result)
 
 
+def _job_info(coordinator: UuCoordinator, job: dict[str, Any]) -> dict[str, Any]:
+    target = coordinator.data.targets.get(str(job.get("target")))
+    if target is None and job.get("target"):
+        # host jobs run as node jobs ("host:pve" or "pve")
+        node = str(job.get("target")).removeprefix("host:")
+        target = next((t for t in coordinator.data.targets.values() if is_host(t) and t.get("node") == node), None)
+    return {
+        "unit": str(job.get("unit") or ""),
+        "state": job.get("state"),
+        "type": job.get("type"),
+        "target": job.get("target"),
+        "target_id": target.get("id") if target else None,
+        "target_name": (target.get("name") or target.get("id")) if target else job.get("target"),
+        "started_at": job.get("started_at"),
+        "finished_at": job.get("finished_at"),
+        "exit_code": job.get("exit_code"),
+    }
+
+
+def _coordinator(hass: HomeAssistant, entry_id: str) -> UuCoordinator | None:
+    return next((c for c in _coordinators(hass) if c.config_entry.entry_id == entry_id), None)
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command({vol.Required("type"): "ultimate_updater/jobs", vol.Required("entry_id"): str})
+@callback
+def ws_jobs(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Running and recent jobs of an instance, newest first."""
+    coordinator = _coordinator(hass, msg["entry_id"])
+    if coordinator is None:
+        connection.send_error(msg["id"], "not_found", "Unknown Ultimate Updater instance")
+        return
+    jobs = [_job_info(coordinator, j) for j in coordinator.data.jobs if j.get("unit")]
+    jobs.sort(key=lambda j: str(j["started_at"] or j["finished_at"] or ""), reverse=True)
+    connection.send_result(msg["id"], jobs)
+
+
 @websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "ultimate_updater/job_log",
         vol.Required("entry_id"): str,
-        vol.Required("target_id"): str,
+        vol.Exclusive("target_id", "job"): str,
+        vol.Exclusive("unit", "job"): str,
     }
 )
 @websocket_api.async_response
 async def ws_job_log(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
-    """Latest job of a system and, if it failed, its last log lines."""
-    coordinator = next((c for c in _coordinators(hass) if c.config_entry.entry_id == msg["entry_id"]), None)
+    """Log of a job: the given one or the latest job of a system (needs the "logs" permission).
+
+    Logs of finished jobs are cached; the log of a running job is read again on every call.
+    """
+    coordinator = _coordinator(hass, msg["entry_id"])
     if coordinator is None:
         connection.send_error(msg["id"], "not_found", "Unknown Ultimate Updater instance")
         return
-    jobs = coordinator.data.jobs_of(msg["target_id"])
-    if not jobs:
+    if "unit" in msg:
+        job = next((j for j in coordinator.data.jobs if j.get("unit") == msg["unit"]), None)
+        if job is None:
+            job = {"unit": msg["unit"]}  # no longer in the job list, the log may still exist
+    else:
+        jobs = coordinator.data.jobs_of(msg.get("target_id", ""))
+        job = jobs[0] if jobs else None
+    if job is None:
         connection.send_result(msg["id"], None)
         return
-    job = jobs[0]
-    unit = str(job.get("unit") or "")
-    log = coordinator.job_logs.get(unit)
+    info = _job_info(coordinator, job)
+    unit = info["unit"]
+    busy = job.get("state") in BUSY_STATES
+    log = None if busy else coordinator.job_logs.get(unit)
     error = None
-    if log is None and unit and job.get("state") in FAILURE_STATES:
+    if log is None and unit:
         try:
-            log = coordinator.job_logs[unit] = await coordinator.client.get_job_log(unit)
+            log = await coordinator.client.get_job_log(unit)
+            if not busy and job.get("state"):
+                coordinator.job_logs[unit] = log
         except UuError as err:
-            error = str(err)
-    connection.send_result(
-        msg["id"],
-        {
-            "unit": unit,
-            "state": job.get("state"),
-            "type": job.get("type"),
-            "started_at": job.get("started_at"),
-            "finished_at": job.get("finished_at"),
-            "exit_code": job.get("exit_code"),
-            "log": log,
-            "error": error,
-        },
-    )
+            error = "no_permission" if err.status == 403 else str(err)
+    connection.send_result(msg["id"], {**info, "log": log, "error": error})
