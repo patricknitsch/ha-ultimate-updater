@@ -52,7 +52,7 @@ One device for the Ultimate Updater instance and one device per host / LXC conta
 
 | Per host/VM/CT | Description |
 |---|---|
-| `update.<name>_packages` | Pending package updates as an update entity – it shows up under **Settings → Updates**. *Install* starts the update of this system (hosts: node update, the guests are not touched). The "versions" are texts: installed `up to date`, latest e.g. `7 updates (2 security)`. |
+| `update.<name>_packages` | Pending package updates as an update entity – it shows up under **Settings → Updates**. *Install* starts the update of this system (hosts: node update, the guests are not touched). The "versions" are texts: installed `up to date`, latest e.g. `7 updates (2 security)`. Attributes `api_update_blocked` / `api_update_hint`: why the API cannot update it (see below). |
 | `sensor.<name>_security_updates`, `sensor.<name>_other_updates` | Pending updates (unknown for shut down/unreachable systems) |
 | `binary_sensor.<name>_reboot_required` | The system needs a reboot |
 | `button.<name>_check_for_updates` | Check this system (installs nothing) |
@@ -77,6 +77,19 @@ One device for the Ultimate Updater instance and one device per host / LXC conta
 Collective updates run one system after the other: Ultimate Updater answers as soon as a job has *started*, so
 the integration waits until the job of one system has finished before it starts the next one. While a job is
 running, further actions are refused.
+
+## What the API cannot do
+
+Ultimate Updater deliberately does not allow everything through its integration API that its Web UI, CLI and
+own schedule can do. The integration therefore does not offer such actions or points them out:
+
+| Restriction of Ultimate Updater | What the integration does |
+|---|---|
+| **Extra/community/helper or custom scripts** (`PIHOLE`, `DOCKER_COMPOSE`, `IOBROKER`, `INCLUDE_HELPER_SCRIPTS` …, `scripts.d/<ID>`, script-only): if they would run during the update – or this cannot be ruled out – Ultimate Updater refuses an API update (`API_UNSAFE_SCRIPT_PATH` / `API_PREFLIGHT_UNAVAILABLE`). This affects e.g. containers with Pi-hole or Docker Compose stacks when `EXTRA_GLOBAL` and `IN_HEADLESS_MODE` are on. | The integration remembers the refusal (also across restarts): *Install* is switched off for the system, the panel shows "Web UI/CLI only", collective updates skip it (counted as "not updatable via API") and **Settings → Repairs** lists all affected systems. Once the configuration of Ultimate Updater has been changed, the block can be reset there; after an update of Ultimate Updater it is retried automatically. Update these systems in the Web UI, the CLI or the schedule of Ultimate Updater. |
+| **Shut down guests** are only updated with `STOPPED_CONTAINER` / `STOPPED_VM`. | If Ultimate Updater reports (`/api/v1/capabilities`) that it is off, *Install* is switched off for shut down guests and collective updates with "all VMs/CTs" skip them as well. |
+| **Automatic reboot** (`REBOOT_IF_NEEDED`) never happens for API updates. | The reboot hint is shown; reboot with the reboot button (option) or by hand. |
+| **Backup requirement** is never skipped for API updates. | A clear error message when Ultimate Updater does not start the update for this reason. |
+| **Updating Ultimate Updater itself** and "update everything" are not offered by the API. | Only the *Ultimate Updater update* indicator; collective updates are run by the integration one system after the other. |
 
 ## Options
 

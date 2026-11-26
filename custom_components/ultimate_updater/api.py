@@ -117,6 +117,11 @@ class UuClient:
         data = await self._call("GET", "/updater-version")
         return data if isinstance(data, dict) else {}
 
+    async def get_capabilities(self) -> dict[str, Any]:
+        """Configured lifecycle behaviour (STOPPED_CONTAINER / STOPPED_VM …); 404 on older versions."""
+        data = await self._call("GET", "/capabilities")
+        return data if isinstance(data, dict) else {}
+
     # ── actions (answer 202 when the job has started) ──
     async def check(self, target_id: str) -> dict[str, Any]:
         return await self._call("POST", f"/check/{_q(target_id)}", {})

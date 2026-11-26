@@ -16,7 +16,7 @@ from homeassistant.helpers.typing import ConfigType
 
 from .api import UuClient
 from .const import CONF_VALIDATE_CERT, DEFAULT_PORT, DOMAIN
-from .coordinator import UuConfigEntry, UuCoordinator
+from .coordinator import UuConfigEntry, UuCoordinator, async_remove_store
 from .entity import hub_fields
 from .panel import async_register_panel, async_remove_panel
 from .websocket import async_register_websocket
@@ -49,8 +49,10 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: UuConfigEntry) -> bool:
     coordinator = UuCoordinator(hass, entry, create_client(hass, dict(entry.data)))
+    await coordinator.async_load_blocks()
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
+    coordinator.async_sync_issue()
     # register the instance device first, the system devices refer to it by its id
     hub = dr.async_get(hass).async_get_or_create(config_entry_id=entry.entry_id, **hub_fields(coordinator))
     coordinator.hub_device_id = hub.id
@@ -69,6 +71,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: UuConfigEntry) -> bool:
 
 async def _async_options_updated(hass: HomeAssistant, entry: UuConfigEntry) -> None:
     await hass.config_entries.async_reload(entry.entry_id)
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: UuConfigEntry) -> None:
+    """Forget the stored refusals and the repair issue of a deleted instance."""
+    await async_remove_store(hass, entry.entry_id)
 
 
 async def async_remove_config_entry_device(hass: HomeAssistant, entry: UuConfigEntry, device: dr.DeviceEntry) -> bool:

@@ -10,7 +10,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .coordinator import UuConfigEntry, UuCoordinator
 from .entity import UuTargetEntity
-from .helpers import available_updates, is_busy, is_current, normal_updates, security_updates
+from .helpers import BLOCK_HINTS, BLOCK_SHORT, available_updates, is_busy, is_current, normal_updates, security_updates
 
 PARALLEL_UPDATES = 0
 
@@ -40,11 +40,22 @@ class UuUpdateEntity(UuTargetEntity, UpdateEntity):
     "up to date", the latest one e.g. "7 updates (2 security)".
     """
 
-    _attr_supported_features = UpdateEntityFeature.INSTALL | UpdateEntityFeature.PROGRESS
     _attr_title = "Packages"
 
     def __init__(self, coordinator: UuCoordinator, target_id: str) -> None:
         super().__init__(coordinator, target_id, "packages")
+
+    @property
+    def supported_features(self) -> UpdateEntityFeature:
+        """No "Install" for systems that Ultimate Updater does not update through the API."""
+        if self.coordinator.update_block(self.target_id):
+            return UpdateEntityFeature.PROGRESS
+        return UpdateEntityFeature.INSTALL | UpdateEntityFeature.PROGRESS
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        block = self.coordinator.update_block(self.target_id)
+        return {"api_update_blocked": block, "api_update_hint": BLOCK_HINTS.get(block or "")}
 
     @property
     def installed_version(self) -> str | None:
@@ -73,6 +84,8 @@ class UuUpdateEntity(UuTargetEntity, UpdateEntity):
         if t is None:
             return None
         lines = []
+        if block := self.coordinator.update_block(self.target_id):
+            lines.append(BLOCK_SHORT[block])
         sec, normal = security_updates(t), normal_updates(t)
         if sec is not None or normal is not None:
             lines.append(f"Security updates: {sec or 0}, other updates: {normal or 0}")

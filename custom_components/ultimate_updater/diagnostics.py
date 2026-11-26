@@ -24,4 +24,6 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: UuConfi
         "generated_at": data.generated_at,
         "bulk": None if coordinator.bulk is None else vars(coordinator.bulk),
         "bulk_result": coordinator.bulk_result,
+        "capabilities": coordinator.capabilities,
+        "api_blocks": coordinator.api_blocks,
     }

@@ -47,6 +47,9 @@ class FakeUu:
         self.status: HTTPStatus | None = None  # forced HTTP status for every request
         self.counter = 0
         self.auto_complete = False  # jobs finish on the next /jobs read
+        self.capabilities: dict[str, Any] | None = None  # GET /capabilities, 404 if None
+        self.refuse: dict[str, tuple[int, str]] = {}  # target id → (HTTP status, error code) for POST update
+        self.version = "5.2.0"
 
     def _response(self, method: str, url: Any, status: int, data: Any) -> AiohttpClientMockResponse:
         return AiohttpClientMockResponse(method, url, status=status, json=data)
@@ -73,8 +76,10 @@ class FakeUu:
                 return self._response(method, url, 200, {"jobs": jobs})
             if path == "updater-version":
                 return self._response(
-                    method, url, 200, {"installed": "5.2.0", "available": "5.2.1", "update_available": True}
+                    method, url, 200, {"installed": self.version, "available": "5.2.1", "update_available": True}
                 )
+            if path == "capabilities" and self.capabilities is not None:
+                return self._response(method, url, 200, self.capabilities)
             if parts[0] == "jobs" and parts[-1] == "log":
                 return self._response(method, url, 200, {"unit": parts[1], "log": "E: apt failed"})
             return self._response(method, url, 404, {"error": {"code": "NOT_FOUND"}})
@@ -82,6 +87,9 @@ class FakeUu:
         route = parts[0]
         if route in ("update", "update-node", "reboot") and data != {"confirm": True}:
             return self._response(method, url, 422, {"error": {"code": "CONFIRMATION_REQUIRED"}})
+        if route == "update" and parts[1] in self.refuse:
+            status, code = self.refuse[parts[1]]
+            return self._response(method, url, status, {"error": {"code": code, "message": "refused"}})
         if route == "check" and parts[1].startswith("host:"):
             return self._response(method, url, 422, {"error": {"code": "USE_NODE_ACTION"}})
         if route == "jobs" and parts[-1] == "cancel":

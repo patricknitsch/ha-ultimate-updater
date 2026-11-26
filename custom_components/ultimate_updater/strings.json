@@ -61,7 +61,7 @@
         "data_description": {
           "status_interval": "Interval for reading all systems. After a job has finished the status is read right away.",
           "exclude_targets": "VMs/CTs that the collective update buttons skip (e.g. the Home Assistant VM itself). They can still be updated individually.",
-          "bulk_targets": "\"All\" only works if updating stopped guests is enabled in Ultimate Updater (STOPPED_CONTAINER / STOPPED_VM in update.conf).",
+          "bulk_targets": "\"All\" only works if updating stopped guests is enabled in Ultimate Updater (STOPPED_CONTAINER / STOPPED_VM in update.conf); if Ultimate Updater reports that it is off, shut down guests are skipped anyway. Systems that Ultimate Updater does not update through the API are always skipped.",
           "allow_reboot": "Creates a reboot button per host/VM/CT, usable while it needs a reboot.",
           "remove_stale": "Removes the devices of hosts/VMs/CTs that Ultimate Updater no longer reports."
         }
@@ -136,6 +136,26 @@
     "permission_denied": { "message": "The API token lacks the permission for this action: {error}" },
     "action_failed": { "message": "Ultimate Updater refused the action: {error}" },
     "unknown_target": { "message": "Unknown system {target} – please wait for the next refresh." },
-    "reboot_disabled": { "message": "Reboot buttons are disabled in the integration options." }
+    "reboot_disabled": { "message": "Reboot buttons are disabled in the integration options." },
+    "api_unsafe_script_path": { "message": "{target} cannot be updated through the API: Ultimate Updater would run extra, community, helper or custom scripts there (e.g. Pi-hole, Docker Compose, scripts.d), which it never does for API actions. Update it in the Ultimate Updater Web UI, the CLI or its own schedule." },
+    "api_preflight_unavailable": { "message": "{target} cannot be updated through the API: Ultimate Updater could not verify that no extra or custom scripts would run (e.g. because it is shut down). Start it, or update it in the Ultimate Updater Web UI, the CLI or its own schedule." },
+    "stopped_update_disabled": { "message": "{target} is shut down and Ultimate Updater only updates shut down guests with STOPPED_CONTAINER / STOPPED_VM enabled in its update.conf. Start it first." },
+    "backup_required": { "message": "Ultimate Updater did not start the update of {target}: the backup safety requirement of its configuration is not met (API updates never skip it). Create the backup or update it in the Web UI." },
+    "reboot_not_required": { "message": "{target} is not marked as needing a reboot – Ultimate Updater only reboots systems that need it. Check it again first." },
+    "reboot_unsupported": { "message": "Ultimate Updater cannot reboot {target}." },
+    "target_offline": { "message": "{target} is not reachable." }
+  },
+  "issues": {
+    "api_update_blocked": {
+      "title": "Some systems cannot be updated through the API",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Systems not updatable through the API ({title})",
+            "description": "Ultimate Updater refused to update these systems through its integration API: {targets}\n\nFor API actions it never runs extra, community, helper or custom scripts (Pi-hole, Docker Compose, ioBroker, scripts.d …) and refuses the update when they would run or cannot be ruled out. Their \"Install\" is therefore switched off in Home Assistant and collective updates skip them. Update them in the Ultimate Updater Web UI, the CLI or its own schedule.\n\nIf you have changed the configuration of Ultimate Updater (e.g. extra updates switched off for headless mode, scripts removed), submit to allow API updates of these systems again."
+          }
+        }
+      }
+    }
   }
 }

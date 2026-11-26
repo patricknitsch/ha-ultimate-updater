@@ -46,11 +46,21 @@ const TXT = {
 		confirmUpdate: n => `${n} aktualisieren? Es werden alle offenen Updates installiert.`,
 		confirmHost: n => `Proxmox-Host ${n} aktualisieren? Die Gäste werden dabei nicht angefasst.`,
 		confirmReboot: n => `${n} jetzt neu starten?`,
-		confirmAll: "Alle laufenden VMs/CTs nacheinander komplett aktualisieren (Hosts und ausgenommene übersprungen)?",
+		confirmAll: "Alle laufenden VMs/CTs nacheinander komplett aktualisieren (Hosts, ausgenommene und nicht über die API aktualisierbare übersprungen)?",
 		confirmSec: "Alle VMs/CTs mit Sicherheitsupdates nacheinander aktualisieren? Dort werden ALLE offenen Updates installiert.",
 		stoppedHint: " Es ist ausgeschaltet – Ultimate Updater startet es dafür nur mit STOPPED_CONTAINER/STOPPED_VM in seiner update.conf.",
 		version: "Version",
 		updaterUpdate: "Update für Ultimate Updater verfügbar",
+		updaterUpdateHint: "Ultimate Updater selbst lässt sich nicht über die API aktualisieren – bitte in seiner Web-UI oder auf dem Host aktualisieren.",
+		apiOnly: "nur über Web-UI/CLI",
+		apiBlock: {
+			API_UNSAFE_SCRIPT_PATH:
+				"Nicht über die API aktualisierbar: Ultimate Updater würde dort Extra-, Community-, Helper- oder eigene Scripte ausführen (z. B. Pi-hole, Docker Compose, scripts.d). Bitte über die Web-UI, die CLI oder den Zeitplan von Ultimate Updater aktualisieren.",
+			API_PREFLIGHT_UNAVAILABLE:
+				"Nicht über die API aktualisierbar: Ultimate Updater konnte nicht sicher prüfen, dass keine Extra- oder eigenen Scripte laufen (z. B. weil das System ausgeschaltet ist). Bitte über die Web-UI, die CLI oder den Zeitplan aktualisieren.",
+			STOPPED_UPDATE_DISABLED:
+				"Ausgeschaltet – Ultimate Updater aktualisiert ausgeschaltete Gäste nur mit STOPPED_CONTAINER/STOPPED_VM in seiner update.conf. Bitte zuerst starten.",
+		},
 		openWebUi: "Web-UI öffnen",
 		types: { host: "Host", lxc: "CT", vm: "VM" },
 		jobStates: {
@@ -119,11 +129,21 @@ const TXT = {
 		confirmUpdate: n => `Update ${n}? All pending updates are installed.`,
 		confirmHost: n => `Update Proxmox host ${n}? Its guests are not touched.`,
 		confirmReboot: n => `Reboot ${n} now?`,
-		confirmAll: "Update all running VMs/CTs completely, one after the other (hosts and excluded ones skipped)?",
+		confirmAll: "Update all running VMs/CTs completely, one after the other (hosts, excluded ones and those the API cannot update skipped)?",
 		confirmSec: "Update all VMs/CTs with security updates, one after the other? ALL pending updates are installed there.",
 		stoppedHint: " It is switched off – Ultimate Updater only starts it for this with STOPPED_CONTAINER/STOPPED_VM in its update.conf.",
 		version: "Version",
 		updaterUpdate: "Update for Ultimate Updater available",
+		updaterUpdateHint: "Ultimate Updater itself cannot be updated through the API – update it in its Web UI or on the host.",
+		apiOnly: "Web UI/CLI only",
+		apiBlock: {
+			API_UNSAFE_SCRIPT_PATH:
+				"Not updatable through the API: Ultimate Updater would run extra, community, helper or custom scripts there (e.g. Pi-hole, Docker Compose, scripts.d). Update it in the Web UI, the CLI or the schedule of Ultimate Updater.",
+			API_PREFLIGHT_UNAVAILABLE:
+				"Not updatable through the API: Ultimate Updater could not verify that no extra or custom scripts would run (e.g. because the system is shut down). Update it in the Web UI, the CLI or the schedule.",
+			STOPPED_UPDATE_DISABLED:
+				"Shut down – Ultimate Updater only updates shut down guests with STOPPED_CONTAINER/STOPPED_VM in its update.conf. Start it first.",
+		},
 		openWebUi: "Open Web UI",
 		types: { host: "Host", lxc: "CT", vm: "VM" },
 		jobStates: {
@@ -605,7 +625,7 @@ class UltimateUpdaterPanel extends HTMLElement {
 			<div class="card-head">
 				<div>
 					<h2>${esc(sys.title)}<a class="ib" href="${esc(sys.url)}" target="_blank" rel="noreferrer" title="${esc(t.openWebUi)}" style="display:inline-flex">${icon(MDI.open, "small")}</a></h2>
-					<div class="sub">${esc(summary && summary !== "unknown" ? summary : "")}${version && version !== "unknown" ? ` · ${esc(t.version)} ${esc(version)}` : ""}${this._on(e.updater_update) ? ` · <span class="sec">${esc(t.updaterUpdate)}</span>` : ""}</div>
+					<div class="sub">${esc(summary && summary !== "unknown" ? summary : "")}${version && version !== "unknown" ? ` · ${esc(t.version)} ${esc(version)}` : ""}${this._on(e.updater_update) ? ` · <span class="sec" title="${esc(t.updaterUpdateHint)}">${esc(t.updaterUpdate)}</span>` : ""}</div>
 				</div>
 				<div class="bar-actions">
 					<button class="btn" data-act="press" data-entity="${esc(e.check_all)}" ${blocked || !this._usable(e.check_all) ? "disabled" : ""}>${icon(MDI.check)}${esc(t.checkAll)}</button>
@@ -714,6 +734,9 @@ class UltimateUpdaterPanel extends HTMLElement {
 		const job = this._val(e.job_state) || "none";
 		const upd = this._st(e.packages);
 		const updating = !!(upd && upd.attributes.in_progress);
+		// why Ultimate Updater would refuse an API update (attribute of the update entity, live)
+		const apiBlock = (upd && upd.attributes.api_update_blocked) || null;
+		const apiHint = apiBlock ? (t.apiBlock[apiBlock] || upd.attributes.api_update_hint || apiBlock) : "";
 		const busy = BUSY.includes(job) || updating;
 		const known = sec !== null || other !== null;
 
@@ -727,14 +750,15 @@ class UltimateUpdaterPanel extends HTMLElement {
 		if (reboot) flags.push(`<span class="flag" title="${esc(t.rebootNeeded)}">${icon(MDI.reboot, "small")}</span>`);
 		if (reachable === "off") flags.push(`<span class="flag err" title="${esc(t.unreachable)}">${icon(MDI.alert, "small")}</span>`);
 		if (tg.stopped) flags.push(`<span class="flag muted" title="${esc(t.stopped)}">${icon(MDI.sleep, "small")}</span>`);
+		if (apiBlock) flags.push(`<span class="flag warn" title="${esc(apiHint)}">${icon(MDI.alert, "small")}</span>`);
 		if (tg.excluded) flags.push(`<span class="flag muted" title="${esc(t.excluded)}">${icon(MDI.info, "small")}</span>`);
 
-		const meta = [tg.host ? "" : tg.id.replace(/^(lxc|vm|guest|external):/, ""), tg.host ? "" : tg.node, tg.os]
+		const meta = [tg.host ? "" : tg.id.replace(/^(lxc|vm|guest|external):/, ""), tg.host ? "" : tg.node, tg.os, apiBlock ? t.apiOnly : ""]
 			.filter(Boolean)
 			.join(" · ");
 		const jobText = busy && updating ? t.updating : t.jobStates[job] || job;
 		const jobCls = FAILED.includes(job) ? "failed" : busy ? "busy" : "";
-		const canUpdate = this._usable(e.packages) && upd && upd.state === "on" && !blocked;
+		const canUpdate = this._usable(e.packages) && upd && upd.state === "on" && !blocked && !apiBlock;
 		const canReboot = e.reboot && this._usable(e.reboot) && !blocked;
 
 		let html = `<tr class="row">
@@ -752,7 +776,7 @@ class UltimateUpdaterPanel extends HTMLElement {
 			}</td>
 			<td class="acts">
 				<button class="ib" title="${esc(t.check)}" data-act="press" data-entity="${esc(e.check)}" ${blocked || !this._usable(e.check) ? "disabled" : ""}>${icon(MDI.check)}</button>
-				<button class="ib" title="${esc(t.update)}" data-act="confirm" data-key="${esc(key)}|update" data-entity="${esc(e.packages)}" ${canUpdate ? "" : "disabled"}>${icon(MDI.update)}</button>
+				<button class="ib" title="${esc(apiBlock ? apiHint : t.update)}" data-act="confirm" data-key="${esc(key)}|update" data-entity="${esc(e.packages)}" ${canUpdate ? "" : "disabled"}>${icon(MDI.update)}</button>
 				${e.reboot ? `<button class="ib danger" title="${esc(t.reboot)}" data-act="confirm" data-key="${esc(key)}|reboot" data-entity="${esc(e.reboot)}" ${canReboot ? "" : "disabled"}>${icon(MDI.reboot)}</button>` : ""}
 			</td>
 		</tr>`;
