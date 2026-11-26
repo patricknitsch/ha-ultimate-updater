@@ -258,3 +258,75 @@ def _skip_text(t: Target) -> str:
     if "PAUSED" in code:
         return "Paused"
     return "Skipped"
+
+
+# ── what the API cannot update ──
+# Ultimate Updater refuses some updates when they are started through the integration API (docs/api-v1.md,
+# "API-2 scoped actions"); the Web UI, the CLI and its own schedule can still do them.
+BLOCK_UNSAFE_SCRIPT = "API_UNSAFE_SCRIPT_PATH"  # extra/community/helper/custom scripts would run (exit code 42)
+BLOCK_PREFLIGHT = "API_PREFLIGHT_UNAVAILABLE"  # could not verify that none would run (exit code 43)
+BLOCK_STOPPED = "STOPPED_UPDATE_DISABLED"  # shut down guest, STOPPED_CONTAINER / STOPPED_VM is "false"
+LEARNED_BLOCKS = {42: BLOCK_UNSAFE_SCRIPT, 43: BLOCK_PREFLIGHT}
+
+BLOCK_HINTS = {
+    BLOCK_UNSAFE_SCRIPT: (
+        "Ultimate Updater does not update this system through the API because extra, community, helper or custom "
+        "scripts would run there (e.g. Pi-hole, Docker Compose, scripts.d). Update it in the Ultimate Updater Web UI, "
+        "the CLI or its own schedule."
+    ),
+    BLOCK_PREFLIGHT: (
+        "Ultimate Updater could not verify that no extra or custom scripts would run on this system (e.g. because it "
+        "is shut down), so it does not update it through the API. Update it in the Ultimate Updater Web UI, the CLI "
+        "or its own schedule."
+    ),
+    BLOCK_STOPPED: (
+        "This system is shut down and Ultimate Updater only updates shut down guests with STOPPED_CONTAINER / "
+        "STOPPED_VM enabled in its update.conf. Start it first."
+    ),
+}
+
+# short form for the release summary of the update entity (max. 255 characters in total)
+BLOCK_SHORT = {
+    BLOCK_UNSAFE_SCRIPT: "Not updatable via the API: extra/custom scripts (e.g. Pi-hole, Docker Compose) would run. "
+    "Use the Ultimate Updater Web UI, CLI or schedule.",
+    BLOCK_PREFLIGHT: "Not updatable via the API: Ultimate Updater could not rule out extra/custom scripts. "
+    "Use its Web UI, CLI or schedule.",
+    BLOCK_STOPPED: "Shut down – Ultimate Updater only updates it with STOPPED_CONTAINER / STOPPED_VM enabled.",
+}
+
+
+def stopped_update_enabled(t: Target, capabilities: dict[str, Any] | None) -> bool | None:
+    """STOPPED_CONTAINER / STOPPED_VM from GET /capabilities, None if unknown."""
+    caps = (capabilities or {}).get("capabilities")
+    key = {"lxc": "stopped_container", "vm": "stopped_vm"}.get(str(t.get("type") or ""))
+    if not isinstance(caps, dict) or key is None:
+        return None
+    update = (caps.get(key) or {}).get("update") if isinstance(caps.get(key), dict) else None
+    configured = update.get("configured") if isinstance(update, dict) else None
+    return configured if isinstance(configured, bool) else None
+
+
+def capability_block(t: Target, capabilities: dict[str, Any] | None) -> str | None:
+    """Block that follows from the configuration of Ultimate Updater and the state of the target."""
+    if not is_host(t) and is_stopped(t) and stopped_update_enabled(t, capabilities) is False:
+        return BLOCK_STOPPED
+    return None
+
+
+def learned_block(t: Target | None, log: str | None = None) -> str | None:
+    """Block code after a failed API update: the exit code that Ultimate Updater stores in the target's
+    last_update (42/43, only set for API actions) or the error name in the job log."""
+    text = log or ""
+    for code in (BLOCK_UNSAFE_SCRIPT, BLOCK_PREFLIGHT):
+        if code in text:
+            return code
+    last = t.get("last_update") if t else None
+    if isinstance(last, dict):
+        message = str(last.get("message") or "")
+        for code in (BLOCK_UNSAFE_SCRIPT, BLOCK_PREFLIGHT):
+            if code in message:
+                return code
+        exit_code = last.get("exit_code")
+        if str(last.get("status") or "").lower() == "failed" and isinstance(exit_code, int):
+            return LEARNED_BLOCKS.get(exit_code)
+    return None

@@ -110,6 +110,8 @@ def ws_systems(hass: HomeAssistant, connection: websocket_api.ActiveConnection, 
                     "host": is_host(t),
                     "stopped": is_stopped(t),
                     "excluded": coordinator.is_excluded(t),
+                    # why Ultimate Updater would refuse an API update (None: possible)
+                    "api_block": coordinator.update_block(tid),
                     "has_security": (security_updates(t) or 0) > 0,
                     "device_id": device.id if device else None,
                     "device_name": (device.name_by_user or device.name) if device else None,

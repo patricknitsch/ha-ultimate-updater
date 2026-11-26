@@ -61,7 +61,7 @@
         "data_description": {
           "status_interval": "Intervall, in dem alle Systeme gelesen werden. Nach einem Job wird der Status sofort gelesen.",
           "exclude_targets": "VMs/CTs, die die Sammel-Update-Buttons überspringen (z. B. die Home-Assistant-VM selbst). Einzeln lassen sie sich weiterhin aktualisieren.",
-          "bulk_targets": "\"Alle\" funktioniert nur, wenn das Aktualisieren gestoppter Gäste auch in Ultimate Updater aktiviert ist (STOPPED_CONTAINER / STOPPED_VM in update.conf).",
+          "bulk_targets": "\"Alle\" funktioniert nur, wenn das Aktualisieren gestoppter Gäste auch in Ultimate Updater aktiviert ist (STOPPED_CONTAINER / STOPPED_VM in update.conf); meldet Ultimate Updater, dass es aus ist, werden ausgeschaltete Gäste trotzdem übersprungen. Systeme, die Ultimate Updater nicht über die API aktualisiert, werden immer übersprungen.",
           "allow_reboot": "Legt pro Host/VM/CT einen Neustart-Button an, nutzbar solange ein Neustart nötig ist.",
           "remove_stale": "Entfernt die Geräte von Hosts/VMs/CTs, die Ultimate Updater nicht mehr meldet."
         }
@@ -136,6 +136,26 @@
     "permission_denied": { "message": "Dem API-Token fehlt die Berechtigung für diese Aktion: {error}" },
     "action_failed": { "message": "Ultimate Updater hat die Aktion abgelehnt: {error}" },
     "unknown_target": { "message": "Unbekanntes System {target} – bitte die nächste Aktualisierung abwarten." },
-    "reboot_disabled": { "message": "Neustart-Buttons sind in den Optionen der Integration deaktiviert." }
+    "reboot_disabled": { "message": "Neustart-Buttons sind in den Optionen der Integration deaktiviert." },
+    "api_unsafe_script_path": { "message": "{target} kann nicht über die API aktualisiert werden: Ultimate Updater würde dort Extra-, Community-, Helper- oder eigene Scripte ausführen (z. B. Pi-hole, Docker Compose, scripts.d), was es bei API-Aktionen nie tut. Bitte über die Web-UI, die CLI oder den Zeitplan von Ultimate Updater aktualisieren." },
+    "api_preflight_unavailable": { "message": "{target} kann nicht über die API aktualisiert werden: Ultimate Updater konnte nicht sicher prüfen, dass keine Extra- oder eigenen Scripte laufen (z. B. weil es ausgeschaltet ist). Bitte starten oder über die Web-UI, die CLI oder den Zeitplan von Ultimate Updater aktualisieren." },
+    "stopped_update_disabled": { "message": "{target} ist ausgeschaltet und Ultimate Updater aktualisiert ausgeschaltete Gäste nur mit STOPPED_CONTAINER / STOPPED_VM in seiner update.conf. Bitte zuerst starten." },
+    "backup_required": { "message": "Ultimate Updater hat das Update von {target} nicht gestartet: Die Backup-Vorgabe seiner Konfiguration ist nicht erfüllt (API-Updates übergehen sie nie). Backup erstellen oder über die Web-UI aktualisieren." },
+    "reboot_not_required": { "message": "{target} ist nicht als neustartbedürftig markiert – Ultimate Updater startet nur Systeme neu, die es brauchen. Bitte zuerst erneut prüfen." },
+    "reboot_unsupported": { "message": "Ultimate Updater kann {target} nicht neu starten." },
+    "target_offline": { "message": "{target} ist nicht erreichbar." }
+  },
+  "issues": {
+    "api_update_blocked": {
+      "title": "Einige Systeme lassen sich nicht über die API aktualisieren",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Nicht über die API aktualisierbare Systeme ({title})",
+            "description": "Ultimate Updater hat das Update dieser Systeme über seine Integrations-API abgelehnt: {targets}\n\nBei API-Aktionen führt es nie Extra-, Community-, Helper- oder eigene Scripte aus (Pi-hole, Docker Compose, ioBroker, scripts.d …) und lehnt das Update ab, wenn sie laufen würden oder sich das nicht ausschließen lässt. „Installieren“ ist für sie in Home Assistant deshalb abgeschaltet und Sammel-Updates überspringen sie. Bitte über die Web-UI, die CLI oder den Zeitplan von Ultimate Updater aktualisieren.\n\nWenn du die Konfiguration von Ultimate Updater geändert hast (z. B. Extra-Updates im Headless-Modus abgeschaltet, Scripte entfernt), bestätige, um API-Updates dieser Systeme wieder zuzulassen."
+          }
+        }
+      }
+    }
   }
 }
